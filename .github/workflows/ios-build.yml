@@ -30,7 +30,7 @@ jobs:
           zip -r basic_test_app.ipa Payload
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4          # ← changed from v3 to v4
         with:
           name: ios-ipa
           path: basic_test_app.ipa
