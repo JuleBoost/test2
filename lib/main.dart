@@ -25,27 +25,24 @@ class _DetectorScreenState extends State<DetectorScreen> {
   String _status = "Ready";
   String _inferenceTime = "0";
   String? _modelPath;
-  List<Map<String, dynamic>> _history = [];
+  final List<Map<String, dynamic>> _history = [];
 
   Future<void> _pickModel() async {
     setState(() => _status = "Picking model...");
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null) {
-      setState(() => _status = "Compiling & Loading CoreML...");
+      setState(() => _status = "Loading CoreML...");
       final path = result.files.single.path;
       final bool success = await platform.invokeMethod('loadModel', {"path": path});
       setState(() {
         _modelPath = success ? path : null;
         _status = success ? "Model Loaded" : "Load Failed";
       });
-    } else {
-      setState(() => _status = "Ready");
     }
   }
 
   void _toggleCamera() async {
     if (_controller != null) {
-      setState(() => _status = "Stopping...");
       await _controller!.dispose();
       setState(() { _controller = null; _status = "Ready"; _recognitions = []; });
       return;
@@ -53,8 +50,12 @@ class _DetectorScreenState extends State<DetectorScreen> {
 
     setState(() => _status = "Starting Camera...");
     final cameras = await availableCameras();
-    _controller = CameraController(cameras[0], ResolutionPreset.low, // Lower res = Faster FPS
-        imageFormatGroup: ImageFormatGroup.bgra8888, enableAudio: false);
+    _controller = CameraController(
+      cameras[0], 
+      ResolutionPreset.medium, // Restored to Medium
+      imageFormatGroup: ImageFormatGroup.bgra8888, 
+      enableAudio: false
+    );
     
     await _controller!.initialize();
     _controller!.startImageStream((image) async {
@@ -72,6 +73,10 @@ class _DetectorScreenState extends State<DetectorScreen> {
         setState(() {
           _recognitions = results;
           _inferenceTime = "${stopwatch.elapsedMilliseconds}ms";
+          // Log results to history
+          for (var res in results) {
+            _history.add({'label': res['label'], 'time': DateTime.now().toIso8601String()});
+          }
         });
       } finally {
         _isDetecting = false;
@@ -81,11 +86,11 @@ class _DetectorScreenState extends State<DetectorScreen> {
   }
 
   Future<void> _saveData() async {
-    setState(() => _status = "Saving JSON...");
+    setState(() => _status = "Saving...");
     final directory = await getApplicationDocumentsDirectory();
     final file = File('${directory.path}/detections.json');
     await file.writeAsString(jsonEncode(_history));
-    setState(() => _status = "Saved to Files app");
+    setState(() => _status = "Data Saved");
   }
 
   @override
@@ -108,9 +113,9 @@ class _DetectorScreenState extends State<DetectorScreen> {
                 ),
                 const Spacer(),
                 Padding(
-                  padding: const EdgeInsets.all(8.0),
+                  padding: const EdgeInsets.all(20),
                   child: Wrap(
-                    spacing: 8,
+                    spacing: 10,
                     children: [
                       ElevatedButton(onPressed: _pickModel, child: const Text("Load Model")),
                       ElevatedButton(onPressed: _toggleCamera, child: Text(_controller == null ? "Start" : "Stop")),
@@ -133,10 +138,10 @@ class DetectionPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.stroke..strokeWidth = 3.0..color = Colors.greenAccent;
+    final paint = Paint()..style = PaintingStyle.stroke..strokeWidth = 3.0..color = Colors.redAccent;
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+
     for (var res in results) {
-      // Vision (0,0) is bottom-left, Flutter is top-left.
-      // Scaling normalized coordinates to screen size.
       final rect = Rect.fromLTWH(
         res['x'] * size.width,
         res['y'] * size.height,
@@ -144,6 +149,13 @@ class DetectionPainter extends CustomPainter {
         res['h'] * size.height,
       );
       canvas.drawRect(rect, paint);
+
+      textPainter.text = TextSpan(
+        text: "${res['label']} ${(res['confidence'] * 100).toStringAsFixed(0)}%",
+        style: const TextStyle(color: Colors.white, backgroundColor: Colors.redAccent, fontSize: 14),
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(rect.left, rect.top - 20));
     }
   }
   @override
