@@ -38,7 +38,7 @@ import Vision
             do {
                 let compiledUrl = try MLModel.compileModel(at: url)
                 let config = MLModelConfiguration()
-                config.computeUnits = .all // Force GPU/Neural Engine
+                config.computeUnits = .all // Uses Neural Engine + GPU
                 let mlModel = try MLModel(contentsOf: compiledUrl, configuration: config)
                 self.model = try VNCoreMLModel(for: mlModel)
                 DispatchQueue.main.async { result(true) }
@@ -57,36 +57,38 @@ import Vision
             result([]); return
         }
 
-        let request = VNCoreMLRequest(model: model) { request, error in
-            let observations = request.results as? [VNRecognizedObjectObservation] ?? []
-            let results = observations.map { obj -> [String: Any] in
-                // Normalized coordinates: Vision uses bottom-left (0,0)
-                let box = obj.boundingBox 
-                return [
-                    "label": obj.labels.first?.identifier ?? "unknown",
-                    "confidence": obj.confidence,
-                    "x": box.origin.x,
-                    "y": 1.0 - box.origin.y - box.size.height, // Flip Y for Flutter
-                    "w": box.size.width,
-                    "h": box.size.height
-                ]
+        // Use autoreleasepool to prevent memory buildup which slows down FPS
+        autoreleasepool {
+            let request = VNCoreMLRequest(model: model) { request, error in
+                let observations = request.results as? [VNRecognizedObjectObservation] ?? []
+                let results = observations.map { obj -> [String: Any] in
+                    let box = obj.boundingBox
+                    return [
+                        "label": obj.labels.first?.identifier ?? "unknown",
+                        "confidence": obj.confidence,
+                        "x": box.origin.x,
+                        "y": 1.0 - box.origin.y - box.size.height, // Coordinate Correction
+                        "w": box.size.width,
+                        "h": box.size.height
+                    ]
+                }
+                result(results)
             }
-            result(results)
-        }
 
-        request.imageCropAndScaleOption = .scaleFill
-        
-        var pixelBuffer: CVPixelBuffer?
-        let attrs = [kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue, kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue] as CFDictionary
-        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer)
-        
-        if let pb = pixelBuffer {
-            CVPixelBufferLockBaseAddress(pb, [])
-            buffer.data.withUnsafeBytes { memcpy(CVPixelBufferGetBaseAddress(pb), $0.baseAddress, buffer.data.count) }
-            // .right orientation is critical for portrait alignment
-            let handler = VNImageRequestHandler(cvPixelBuffer: pb, orientation: .right, options: [:])
-            try? handler.perform([request])
-            CVPixelBufferUnlockBaseAddress(pb, [])
+            request.imageCropAndScaleOption = .scaleFill
+            
+            var pixelBuffer: CVPixelBuffer?
+            let attrs = [kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue, kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue] as CFDictionary
+            CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer)
+            
+            if let pb = pixelBuffer {
+                CVPixelBufferLockBaseAddress(pb, [])
+                buffer.data.withUnsafeBytes { memcpy(CVPixelBufferGetBaseAddress(pb), $0.baseAddress, buffer.data.count) }
+                // orientation .right is necessary for portrait camera stream
+                let handler = VNImageRequestHandler(cvPixelBuffer: pb, orientation: .right, options: [:])
+                try? handler.perform([request])
+                CVPixelBufferUnlockBaseAddress(pb, [])
+            }
         }
     }
 }
