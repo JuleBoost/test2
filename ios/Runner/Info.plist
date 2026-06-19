@@ -31,15 +31,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
@@ -48,13 +39,19 @@
 
 	<!-- Permissions for Camera -->
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs camera access for real-time object detection.</string>
+	<string>Camera needed for real-time object detection.</string>
+
+	<!-- Permissions for GPS Location -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location needed to tag detections with GPS coordinates and address.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Location needed to tag detections with GPS coordinates and address.</string>
 
 	<!-- Permissions for Picking Models -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to the photo library/files to load Core ML models.</string>
+	<string>Access needed to load Core ML models from your library.</string>
 
-	<!-- Enable File Exporting/Sharing (to see detections.json in Files App) -->
+	<!-- Enable File Sharing & PDF Export -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
