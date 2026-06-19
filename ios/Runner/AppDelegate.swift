@@ -10,15 +10,20 @@ import Vision
 
     override func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let controller = window?.rootViewController as! FlutterViewController
+        
+        // Setup Method Channel
         channel = FlutterMethodChannel(name: "com.example.test2/detector", binaryMessenger: controller.binaryMessenger)
         
+        // Register the Native Camera View Factory
         let factory = NativeViewFactory(delegate: self)
         registrar(forPlugin: "NativeCam")?.register(factory, withId: "native-cam-view")
 
         channel?.setMethodCallHandler({ (call, result) in
             if call.method == "loadModel", let args = call.arguments as? [String: Any], let path = args["path"] as? String {
                 self.loadModel(path: path, result: result)
-            } else { result(FlutterMethodNotImplemented) }
+            } else {
+                result(FlutterMethodNotImplemented)
+            }
         })
 
         GeneratedPluginRegistrant.register(with: self)
@@ -30,20 +35,24 @@ import Vision
         do {
             let compiledUrl = try MLModel.compileModel(at: url)
             let config = MLModelConfiguration()
-            config.computeUnits = .all
+            config.computeUnits = .all 
             let mlModel = try MLModel(contentsOf: compiledUrl, configuration: config)
             self.model = try VNCoreMLModel(for: mlModel)
             result(true)
-        } catch { result(false) }
+        } catch {
+            result(false)
+        }
     }
 }
 
 class NativeViewFactory: NSObject, FlutterPlatformViewFactory {
     private var delegate: AppDelegate
     init(delegate: AppDelegate) { self.delegate = delegate }
+    
     func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
         return NativeCamView(frame: frame, delegate: delegate)
     }
+    
     func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
         return FlutterStandardMessageCodec.sharedInstance()
     }
@@ -84,11 +93,13 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
 
             previewLayer = AVCaptureVideoPreviewLayer(session: session)
             previewLayer?.videoGravity = .resizeAspectFill
+            previewLayer?.frame = _view.bounds
             
-            // Add layers
             if let pl = previewLayer {
                 _view.layer.addSublayer(pl)
             }
+            
+            boxLayer.frame = _view.bounds
             _view.layer.addSublayer(boxLayer)
             
             DispatchQueue.global(qos: .userInitiated).async {
@@ -98,7 +109,9 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
                     self.boxLayer.frame = self._view.bounds
                 }
             }
-        } catch { print("Camera error") }
+        } catch {
+            print("Camera Error")
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -111,17 +124,23 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
             let observations = request.results as? [VNRecognizedObjectObservation] ?? []
             
             DispatchQueue.main.async {
-                // Critical Fix: Sync frames every time in case Flutter resized the view
+                // Ensure layers match view size
                 if self.previewLayer?.frame != self._view.bounds {
                     self.previewLayer?.frame = self._view.bounds
                     self.boxLayer.frame = self._view.bounds
                 }
                 
                 self.drawBoxes(observations: observations)
+                
+                // Send data back to Dart for Supabase/PDF/UI
                 let labels = observations.map { $0.labels.first?.identifier ?? "unknown" }
-                self.delegate.channel?.invokeMethod("updateResults", arguments: ["time": millis, "results": labels])
+                self.delegate.channel?.invokeMethod("updateResults", arguments: [
+                    "time": millis,
+                    "results": labels
+                ])
             }
         }
+        
         request.imageCropAndScaleOption = .scaleFill
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])
@@ -129,12 +148,17 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
 
     func drawBoxes(observations: [VNRecognizedObjectObservation]) {
         boxLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
-        let w = _view.bounds.width
-        let h = _view.bounds.height
+        let width = _view.bounds.width
+        let height = _view.bounds.height
         
         for observation in observations {
-            let rect = VNImageRectForNormalizedRect(observation.boundingBox, Int(w), Int(h))
-            let correctedRect = CGRect(x: rect.origin.x, y: h - rect.origin.y - rect.size.height, width: rect.size.width, height: rect.size.height)
+            let rect = VNImageRectForNormalizedRect(observation.boundingBox, Int(width), Int(height))
+            let correctedRect = CGRect(
+                x: rect.origin.x, 
+                y: height - rect.origin.y - rect.size.height, 
+                width: rect.size.width, 
+                height: rect.size.height
+            )
             
             let shape = CAShapeLayer()
             shape.path = UIBezierPath(rect: correctedRect).cgPath
