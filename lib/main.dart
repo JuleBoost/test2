@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final AudioPlayer _player = AudioPlayer();
+
   @override
   void initState() {
     super.initState();
@@ -33,9 +36,23 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initApp() async {
-    await Future.delayed(const Duration(seconds: 3));
+    try {
+      await _player.play(AssetSource('loading.mp3'));
+    } catch (e) {
+      print("Audio play error: $e");
+    }
+    
+    await Future.delayed(const Duration(seconds: 4));
     await Geolocator.requestPermission();
-    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DetectorScreen()));
+    if (mounted) {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DetectorScreen()));
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
   }
 
   @override
@@ -50,7 +67,7 @@ class _SplashScreenState extends State<SplashScreen> {
             SizedBox(height: 20),
             CircularProgressIndicator(color: Colors.blueAccent),
             SizedBox(height: 10),
-            Text("SYSTEM LOADING...", style: TextStyle(color: Colors.white, letterSpacing: 2))
+            Text("SYSTEM INITIALIZING...", style: TextStyle(color: Colors.white, letterSpacing: 2))
           ],
         ),
       ),
