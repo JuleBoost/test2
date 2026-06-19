@@ -1,88 +1,56 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MaterialApp(home: DetectorScreen()));
-}
+void main() => runApp(const MaterialApp(home: NativeDetectorScreen()));
 
-class DetectorScreen extends StatefulWidget {
-  const DetectorScreen({super.key});
+class NativeDetectorScreen extends StatefulWidget {
+  const NativeDetectorScreen({super.key});
   @override
-  State<DetectorScreen> createState() => _DetectorScreenState();
+  State<NativeDetectorScreen> createState() => _NativeDetectorScreenState();
 }
 
-class _DetectorScreenState extends State<DetectorScreen> {
+class _NativeDetectorScreenState extends State<NativeDetectorScreen> {
   static const platform = MethodChannel('com.example.test2/detector');
-  CameraController? _controller;
-  List<dynamic> _recognitions = [];
-  bool _isDetecting = false;
   String _status = "Ready";
-  String _inferenceTime = "0";
-  String? _modelPath;
-  final List<Map<String, dynamic>> _history = [];
+  String _inferenceTime = "0ms";
+  bool _isCameraRunning = false;
+  List<Map<String, dynamic>> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for data coming from Swift (Inference time and detections)
+    platform.setMethodCallHandler((call) async {
+      if (call.method == "updateResults") {
+        setState(() {
+          _inferenceTime = "${call.arguments['time']}ms";
+          final List results = call.arguments['results'];
+          for (var res in results) {
+            _history.add({'label': res, 'time': DateTime.now().toIso8601String()});
+          }
+        });
+      }
+    });
+  }
 
   Future<void> _pickModel() async {
     setState(() => _status = "Picking model...");
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null) {
-      setState(() => _status = "Loading CoreML...");
-      final path = result.files.single.path;
-      final bool success = await platform.invokeMethod('loadModel', {"path": path});
-      setState(() {
-        _modelPath = success ? path : null;
-        _status = success ? "Model Loaded" : "Load Failed";
-      });
+      final success = await platform.invokeMethod('loadModel', {"path": result.files.single.path});
+      setState(() => _status = success ? "Model Loaded" : "Load Failed");
     }
   }
 
-  void _toggleCamera() async {
-    if (_controller != null) {
-      await _controller!.dispose();
-      setState(() { _controller = null; _status = "Ready"; _recognitions = []; });
-      return;
-    }
-
-    setState(() => _status = "Starting Camera...");
-    final cameras = await availableCameras();
-    _controller = CameraController(
-      cameras[0], 
-      ResolutionPreset.medium, // Restored to Medium
-      imageFormatGroup: ImageFormatGroup.bgra8888, 
-      enableAudio: false
-    );
-    
-    await _controller!.initialize();
-    _controller!.startImageStream((image) async {
-      if (_isDetecting || _modelPath == null) return;
-      _isDetecting = true;
-
-      final stopwatch = Stopwatch()..start();
-      try {
-        final List<dynamic> results = await platform.invokeMethod('detect', {
-          "buffer": image.planes[0].bytes,
-          "width": image.width,
-          "height": image.height,
-        });
-        
-        setState(() {
-          _recognitions = results;
-          _inferenceTime = "${stopwatch.elapsedMilliseconds}ms";
-          // Log results to history
-          for (var res in results) {
-            _history.add({'label': res['label'], 'time': DateTime.now().toIso8601String()});
-          }
-        });
-      } finally {
-        _isDetecting = false;
-      }
+  void _toggleCamera() {
+    setState(() {
+      _isCameraRunning = !_isCameraRunning;
+      _status = _isCameraRunning ? "Detecting..." : "Camera Stopped";
     });
-    setState(() => _status = "Detecting...");
   }
 
   Future<void> _saveData() async {
@@ -90,7 +58,7 @@ class _DetectorScreenState extends State<DetectorScreen> {
     final directory = await getApplicationDocumentsDirectory();
     final file = File('${directory.path}/detections.json');
     await file.writeAsString(jsonEncode(_history));
-    setState(() => _status = "Data Saved");
+    setState(() => _status = "Saved: ${_history.length} items");
   }
 
   @override
@@ -98,18 +66,19 @@ class _DetectorScreenState extends State<DetectorScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          if (_controller != null && _controller!.value.isInitialized)
-            SizedBox.expand(child: CameraPreview(_controller!)),
-          CustomPaint(painter: DetectionPainter(_recognitions), child: Container()),
+          if (_isCameraRunning)
+            const UiKitView(
+              viewType: 'native-cam-view',
+              creationParams: {},
+              creationParamsCodec: StandardMessageCodec(),
+            ),
           SafeArea(
             child: Column(
               children: [
                 Container(
-                  color: Colors.black54,
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  child: Text("Status: $_status | Inference: $_inferenceTime",
-                      style: const TextStyle(color: Colors.white)),
+                  color: Colors.black54, width: double.infinity, padding: const EdgeInsets.all(8),
+                  child: Text("Status: $_status | Inference: $_inferenceTime", 
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
                 const Spacer(),
                 Padding(
@@ -118,8 +87,8 @@ class _DetectorScreenState extends State<DetectorScreen> {
                     spacing: 10,
                     children: [
                       ElevatedButton(onPressed: _pickModel, child: const Text("Load Model")),
-                      ElevatedButton(onPressed: _toggleCamera, child: Text(_controller == null ? "Start" : "Stop")),
-                      ElevatedButton(onPressed: _saveData, child: const Text("Save")),
+                      ElevatedButton(onPressed: _toggleCamera, child: Text(_isCameraRunning ? "Stop" : "Start")),
+                      ElevatedButton(onPressed: _saveData, child: const Text("Save JSON")),
                     ],
                   ),
                 )
@@ -130,34 +99,4 @@ class _DetectorScreenState extends State<DetectorScreen> {
       ),
     );
   }
-}
-
-class DetectionPainter extends CustomPainter {
-  final List<dynamic> results;
-  DetectionPainter(this.results);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.stroke..strokeWidth = 3.0..color = Colors.redAccent;
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-
-    for (var res in results) {
-      final rect = Rect.fromLTWH(
-        res['x'] * size.width,
-        res['y'] * size.height,
-        res['w'] * size.width,
-        res['h'] * size.height,
-      );
-      canvas.drawRect(rect, paint);
-
-      textPainter.text = TextSpan(
-        text: "${res['label']} ${(res['confidence'] * 100).toStringAsFixed(0)}%",
-        style: const TextStyle(color: Colors.white, backgroundColor: Colors.redAccent, fontSize: 14),
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(rect.left, rect.top - 20));
-    }
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
