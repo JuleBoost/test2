@@ -14,8 +14,8 @@ import 'package:audioplayers/audioplayers.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
-    url: 'https://hvygdmtjtwskklmyxgwv.supabase.co',
-    anonKey: 'sb_publishable_OahMLpySUkDoVhYGQGKLsQ_H6LGcnx5',
+    url: 'https://afhlqhzcnbqbvwgkttfz.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaGxxaHpjbmJxYnZ3Z2t0dGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMDcwNjAsImV4cCI6MjA5NzY4MzA2MH0.-OYWckYZipMQE6F8R5FBEPmBCtWDiCCeM_lVtG4AK6Y',
   );
   runApp(const MaterialApp(home: SplashScreen()));
 }
@@ -36,41 +36,26 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initApp() async {
-    try {
-      await _player.play(AssetSource('loading.mp3'));
-    } catch (e) {
-      print("Audio play error: $e");
-    }
-    
+    try { await _player.play(AssetSource('loading.mp3')); } catch (_) {}
     await Future.delayed(const Duration(seconds: 4));
     await Geolocator.requestPermission();
-    if (mounted) {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DetectorScreen()));
-    }
+    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DetectorScreen()));
   }
 
   @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
+  void dispose() { _player.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.security, size: 100, color: Colors.blueAccent),
-            SizedBox(height: 20),
-            CircularProgressIndicator(color: Colors.blueAccent),
-            SizedBox(height: 10),
-            Text("SYSTEM INITIALIZING...", style: TextStyle(color: Colors.white, letterSpacing: 2))
-          ],
-        ),
-      ),
+      body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.security, size: 100, color: Colors.blueAccent),
+        SizedBox(height: 20),
+        CircularProgressIndicator(color: Colors.blueAccent),
+        SizedBox(height: 10),
+        Text("SYSTEM INITIALIZING...", style: TextStyle(color: Colors.white, letterSpacing: 2))
+      ])),
     );
   }
 }
@@ -108,81 +93,78 @@ class _DetectorScreenState extends State<DetectorScreen> {
     try {
       Position p = await Geolocator.getCurrentPosition();
       List<Placemark> pm = await placemarkFromCoordinates(p.latitude, p.longitude);
-      String addr = "${pm.first.street}, ${pm.first.locality}";
+      Placemark place = pm.first;
       
+      final now = DateTime.now().toIso8601String();
       final data = {
         'anomaly': label,
+        'category': 'Detection',
+        'severity': 'Medium',
+        'status': 'detected',
         'confidence': 0.95,
         'lat': p.latitude,
         'lng': p.longitude,
-        'address': addr,
-        'timestamp': DateTime.now().toIso8601String(),
+        'address': "${place.street}, ${place.locality}",
+        'municipality_name': place.locality,
+        'district': place.subLocality,
+        'governorate': place.administrativeArea,
+        'reports_count': 1,
+        'first_seen_at': now,
+        'last_seen_at': now,
+        'timestamp': now,
       };
       
       _history.add(data);
-      await supabase.from('detections').insert(data);
-    } catch (e) { print(e); }
+      await supabase.from('anomalies').insert(data);
+    } catch (e) { print("Sync Error: $e"); }
   }
 
   Future<void> _generatePdf() async {
     final pdf = pw.Document();
     pdf.addPage(pw.MultiPage(build: (pw.Context context) => [
-      pw.Header(level: 0, text: "Anomaly Detection Report"),
+      pw.Header(level: 0, text: "Anomaly Report"),
       pw.TableHelper.fromTextArray(
         data: <List<String>>[
-          ['Anomaly', 'Address', 'Lat', 'Lng', 'Time'],
-          ..._history.map((e) => [e['anomaly'], e['address'], e['lat'].toString(), e['lng'].toString(), e['timestamp']])
+          ['Anomaly', 'District', 'Governorate', 'Time'],
+          ..._history.map((e) => [e['anomaly'], e['district'] ?? '', e['governorate'] ?? '', e['timestamp']])
         ],
       ),
     ]));
-    
     final dir = await getTemporaryDirectory();
     final file = File("${dir.path}/report.pdf");
     await file.writeAsBytes(await pdf.save());
-    await Share.shareXFiles([XFile(file.path)], text: 'Detection PDF Report');
+    await Share.shareXFiles([XFile(file.path)], text: 'Detection Report');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          if (_isCam) const SizedBox.expand(child: UiKitView(viewType: 'native-cam-view', creationParams: {}, creationParamsCodec: StandardMessageCodec())),
-          SafeArea(
-            child: Column(
-              children: [
-                Container(
-                  color: Colors.black54, padding: const EdgeInsets.all(12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Status: $_status | $_infTime", style: const TextStyle(color: Colors.white)),
-                      Row(children: [
-                        const Text("AUTO-DB", style: TextStyle(color: Colors.white, fontSize: 10)),
-                        Switch(value: _autoSync, onChanged: (v) => setState(() => _autoSync = v)),
-                      ])
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Wrap(spacing: 10, children: [
-                    ElevatedButton(onPressed: () async {
-                      FilePickerResult? r = await FilePicker.platform.pickFiles();
-                      if (r != null) await platform.invokeMethod('loadModel', {"path": r.files.single.path});
-                      setState(() => _status = "Model Loaded");
-                    }, child: const Text("Load Model")),
-                    ElevatedButton(onPressed: () => setState(() => _isCam = !_isCam), child: Text(_isCam ? "Stop" : "Start")),
-                    ElevatedButton(onPressed: _generatePdf, child: const Text("PDF & Share")),
-                  ]),
-                )
-              ],
-            ),
-          ),
-        ],
-      ),
+      body: Stack(children: [
+        if (_isCam) const SizedBox.expand(child: UiKitView(viewType: 'native-cam-view', creationParams: {}, creationParamsCodec: StandardMessageCodec())),
+        SafeArea(child: Column(children: [
+          Container(color: Colors.black54, padding: const EdgeInsets.all(12), child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Status: $_status | $_infTime", style: const TextStyle(color: Colors.white)),
+              Row(children: [
+                const Text("AUTO-DB", style: TextStyle(color: Colors.white, fontSize: 10)),
+                Switch(value: _autoSync, onChanged: (v) => setState(() => _autoSync = v)),
+              ])
+            ],
+          )),
+          const Spacer(),
+          Padding(padding: const EdgeInsets.all(20), child: Wrap(spacing: 10, children: [
+            ElevatedButton(onPressed: () async {
+              FilePickerResult? r = await FilePicker.platform.pickFiles();
+              if (r != null) await platform.invokeMethod('loadModel', {"path": r.files.single.path});
+              setState(() => _status = "Model Loaded");
+            }, child: const Text("Load Model")),
+            ElevatedButton(onPressed: () => setState(() => _isCam = !_isCam), child: Text(_isCam ? "Stop" : "Start")),
+            ElevatedButton(onPressed: _generatePdf, child: const Text("PDF & Share")),
+          ]))
+        ]))
+      ]),
     );
   }
 }
