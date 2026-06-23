@@ -11,7 +11,7 @@ import Vision
     override func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let controller = window?.rootViewController as! FlutterViewController
         
-        // Setup Method Channel
+        // Setup Method Channel for communication with Dart
         channel = FlutterMethodChannel(name: "com.example.test2/detector", binaryMessenger: controller.binaryMessenger)
         
         // Register the Native Camera View Factory
@@ -33,13 +33,15 @@ import Vision
     func loadModel(path: String, result: @escaping FlutterResult) {
         let url = URL(fileURLWithPath: path)
         do {
+            // Compile the model at runtime
             let compiledUrl = try MLModel.compileModel(at: url)
             let config = MLModelConfiguration()
-            config.computeUnits = .all 
+            config.computeUnits = .all // Uses GPU and Neural Engine
             let mlModel = try MLModel(contentsOf: compiledUrl, configuration: config)
             self.model = try VNCoreMLModel(for: mlModel)
             result(true)
         } catch {
+            print("Model Compilation Error: \(error)")
             result(false)
         }
     }
@@ -110,7 +112,7 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
                 }
             }
         } catch {
-            print("Camera Error")
+            print("Camera Setup Error: \(error)")
         }
     }
 
@@ -124,7 +126,7 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
             let observations = request.results as? [VNRecognizedObjectObservation] ?? []
             
             DispatchQueue.main.async {
-                // Ensure layers match view size
+                // Ensure layers stay synced with view size
                 if self.previewLayer?.frame != self._view.bounds {
                     self.previewLayer?.frame = self._view.bounds
                     self.boxLayer.frame = self._view.bounds
@@ -132,7 +134,7 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
                 
                 self.drawBoxes(observations: observations)
                 
-                // Send data back to Dart for Supabase/PDF/UI
+                // Send labels and inference time back to Flutter
                 let labels = observations.map { $0.labels.first?.identifier ?? "unknown" }
                 self.delegate.channel?.invokeMethod("updateResults", arguments: [
                     "time": millis,
@@ -143,7 +145,11 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
         
         request.imageCropAndScaleOption = .scaleFill
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
-        try? handler.perform([request])
+        
+        // Run inference in autoreleasepool to keep memory low
+        autoreleasepool {
+            try? handler.perform([request])
+        }
     }
 
     func drawBoxes(observations: [VNRecognizedObjectObservation]) {
@@ -153,6 +159,7 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
         
         for observation in observations {
             let rect = VNImageRectForNormalizedRect(observation.boundingBox, Int(width), Int(height))
+            // Coordinate correction: Vision (bottom-left) to UIKit (top-left)
             let correctedRect = CGRect(
                 x: rect.origin.x, 
                 y: height - rect.origin.y - rect.size.height, 
@@ -160,19 +167,23 @@ class NativeCamView: NSObject, FlutterPlatformView, AVCaptureVideoDataOutputSamp
                 height: rect.size.height
             )
             
+            // Draw Bounding Box
             let shape = CAShapeLayer()
             shape.path = UIBezierPath(rect: correctedRect).cgPath
             shape.strokeColor = UIColor.green.cgColor
             shape.fillColor = UIColor.clear.cgColor
             shape.lineWidth = 3
             
+            // Draw Label and Confidence Text
             let text = CATextLayer()
-            text.string = "\(observation.labels.first?.identifier ?? "") \(Int(observation.confidence * 100))%"
+            let label = observation.labels.first?.identifier ?? "Unknown"
+            let confidence = Int(observation.confidence * 100)
+            text.string = "\(label) \(confidence)%"
             text.fontSize = 16
             text.foregroundColor = UIColor.white.cgColor
             text.backgroundColor = UIColor.green.withAlphaComponent(0.7).cgColor
             text.frame = CGRect(x: correctedRect.origin.x, y: correctedRect.origin.y - 22, width: 160, height: 22)
-            text.contentsScale = UIScreen.main.scale
+            text.contentsScale = UIScreen.main.scale // High res text
             
             shape.addSublayer(text)
             boxLayer.addSublayer(shape)
