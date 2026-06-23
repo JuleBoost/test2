@@ -2,10 +2,8 @@ name: test2
 description: CoreML Supabase GPS PDF App with SFX
 version: 1.0.0+1
 publish_to: 'none'
-
 environment:
   sdk: '>=3.0.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
@@ -19,12 +17,11 @@ dependencies:
   intl: ^0.19.0
   audioplayers: ^6.1.0
   cupertino_icons: ^1.0.6
-
+  shared_preferences: ^2.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-
 flutter:
   uses-material-design: true
   assets:
