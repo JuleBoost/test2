@@ -145,7 +145,7 @@ class _DetectorScreenState extends State<DetectorScreen> {
         if (mounted) setState(() => _syncFeedback = "");
       });
     } catch (e) {
-      setState(() => _syncFeedback = "SYNC FAILED: Check Internet");
+      setState(() => _syncFeedback = "FAIL: ${e.toString().substring(0, 80)}");
     } finally {
       _isSyncing = false;
     }
