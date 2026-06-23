@@ -14,8 +14,8 @@ import 'package:audioplayers/audioplayers.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
-    url: 'https://afhlqhzcnbqbvwgkttfz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaGxxaHpjbmJxYnZ3Z2t0dGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMDcwNjAsImV4cCI6MjA5NzY4MzA2MH0.-OYWckYZipMQE6F8R5FBEPmBCtWDiCCeM_lVtG4AK6Y',
+    url: 'https://hvygdmtjtwskklmyxgwv.supabase.co',
+    anonKey: 'sb_publishable_j7o1byQWTqvAuvmJTlFe7w_5NmzKbc_',
   );
   runApp(const MaterialApp(home: SplashScreen()));
 }
